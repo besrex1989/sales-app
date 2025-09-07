@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+  <style>
+    body{background:#f1f5f9;}
+    .card-custom{border-radius:14px;border:none;box-shadow:0 4px 10px rgba(0,0,0,0.04);}
+    .card-header-custom{background:#2563eb;color:#fff;border-radius:14px 14px 0 0;}
+    .chart-box{background:#fff;padding:20px;border-radius:14px;box-shadow:0 3px 8px rgba(0,0,0,0.04);margin-bottom:30px;}
+  </style>
+</head>
+<body>
+<div class="container py-4">
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-semibold mb-0">Dashboard</h4>
+    <div>
+      <span class="text-muted me-3">👤 {{ user }}</span>
+      <a href="/form" class="btn btn-outline-primary btn-sm me-2">Tagesumsatz erfassen</a>
+      <a href="/logout" class="btn btn-outline-danger btn-sm">Logout</a>
+    </div>
+  </div>
+
+  <!-- Filter -->
+  <form class="row gy-2 gx-3 align-items-end mb-4" method="get" action="/dashboard">
+    <div class="col-6 col-md-3">
+      <label class="form-label">Jahr</label>
+      <select class="form-select" name="jahr" onchange="this.form.submit()">
+        {% for j in jahre %}
+          <option value="{{ j }}" {% if jahr_selected == j %}selected{% endif %}>{{ j }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <label class="form-label">Zeitraum</label>
+      <select class="form-select" name="filter" onchange="this.form.submit()">
+        <option value="monat"     {% if filter=='monat' %}selected{% endif %}>Monat</option>
+        <option value="jahres"    {% if filter=='jahres' %}selected{% endif %}>Jahr</option>
+        <option value="quartal1"  {% if filter=='quartal1' %}selected{% endif %}>Q1</option>
+        <option value="quartal2"  {% if filter=='quartal2' %}selected{% endif %}>Q2</option>
+        <option value="quartal3"  {% if filter=='quartal3' %}selected{% endif %}>Q3</option>
+        <option value="quartal4"  {% if filter=='quartal4' %}selected{% endif %}>Q4</option>
+        <option value="custom"    {% if filter=='custom' %}selected{% endif %}>Benutzerdefiniert</option>
+      </select>
+    </div>
+
+    {% if filter == 'monat' %}
+      <div class="col-6 col-md-3">
+        <label class="form-label">Monat</label>
+        <select class="form-select" name="monat" onchange="this.form.submit()">
+          {% for m in range(1,13) %}
+            {% set m2 = "%02d"|format(m) %}
+            <option value="{{ m2 }}" {% if request.args.get('monat', '') == m2 %}selected{% endif %}>{{ m2 }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {% if filter == 'custom' %}
+      <div class="col-6 col-md-3">
+        <label class="form-label">Von</label>
+        <input type="date" class="form-control" name="start">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label">Bis</label>
+        <input type="date" class="form-control" name="end">
+      </div>
+      <div class="col-12 mt-2">
+        <button class="btn btn-primary" type="submit">Filtern</button>
+      </div>
+    {% endif %}
+  </form>
+
+  <!-- Karten -->
+  <div class="row gy-4">
+    {% for row in stats %}
+      <div class="col-sm-6 col-md-4">
+        <div class="card card-custom h-100">
+          <div class="card-header card-header-custom">{{ row[0] }}</div>
+          <div class="card-body">
+            <strong>Umsatz:</strong> CHF {{ "%.2f"|format(row[1]) }}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+    <div class="col-12">
+      <div class="alert alert-success mt-3">
+        <strong>Gesamtumsatz:&nbsp;CHF {{ "%.2f"|format(gesamt) }}</strong>
+        <span class="ms-2 text-muted">Zeitraum: {{ start }} – {{ end }}</span>
+      </div>
+    </div>
+  </div>
+
+  {% if session.get('role') == 'super' %}
+    <div class="chart-box">
+      <h6>Letzte Schichteingaben</h6>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Restaurant</th><th>Datum</th><th class="text-end">Betrag [CHF]</th></tr></thead>
+          <tbody>
+            {% for r,d,b in last_entries %}
+              <tr><td>{{ r }}</td><td>{{ d }}</td><td class="text-end">CHF {{ "%.2f"|format(b) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="chart-box">
+      <h6 class="mb-3">Jahresumsatz {{ jahr_selected }}</h6>
+      <canvas id="barChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+      <h6 class="mb-3">Monatsentwicklung {{ jahr_selected }}</h6>
+      <canvas id="lineChart"></canvas>
+    </div>
+  {% endif %}
+</div>
+
+{% if session.get('role') == 'super' %}
+<script defer>
+document.addEventListener('DOMContentLoaded', function(){
+  const labelsBar = {{ (stats | map(attribute=0) | list) | tojson }};
+  const dataBar   = {{ (stats | map(attribute=1) | list) | tojson }};
+  const months    = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+  const monatData = {{ monthly | tojson }};
+
+  // Bar
+  new Chart(document.getElementById('barChart'), {
+    type: 'bar',
+    data: { labels: labelsBar, datasets: [{ data: dataBar, backgroundColor: '#38a169' }]},
+    options: { indexAxis: 'y', plugins: { legend: { display: false }}, responsive: true }
+  });
+
+  // Line
+  const colors = ["#2563eb","#16a34a","#cc5800","#db2777","#475569","#0ea5e9","#22c55e"];
+  const ds = [];
+  let i=0;
+  for (const r in monatData){
+    ds.push({ label:r, data:monatData[r], borderColor:colors[i%colors.length], fill:false, tension:0.25, pointRadius:2 });
+    i++;
+  }
+  new Chart(document.getElementById('lineChart'), {
+    type: 'line',
+    data: { labels: months, datasets: ds },
+    options: { plugins:{ legend:{ position:'bottom' }}, responsive:true }
+  });
+});
+</script>
+{% endif %}
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Schichtumsatz erfassen</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body{background:#f1f5f9;}
+    .card-custom{border-radius:14px;border:none;box-shadow:0 4px 10px rgba(0,0,0,0.05);}
+    .rest-ok{color:#16a34a;font-weight:600;}
+    .rest-bad{color:#dc2626;font-weight:600;}
+  </style>
+</head>
+<body>
+<div class="container py-4" style="max-width:700px;">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <a class="btn btn-outline-secondary btn-sm" href="/dashboard">&larr; Übersicht</a>
+    <a href="/logout" class="btn btn-outline-danger btn-sm">Logout</a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat,msg in messages %}
+        <div class="alert alert-{{ 'danger' if cat=='danger' else cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card card-custom p-4">
+    <h5 class="mb-3">Schichtumsatz erfassen</h5>
+    <form method="post" id="umsatzForm" novalidate>
+      <div class="mb-3">
+        <label class="form-label">Restaurant</label>
+        <select name="restaurant" class="form-select" required>
+          {% for r in restaurants %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+        </select>
+      </div>
+
+      <!-- Kategorien (nur Client-seitig zur Totalsumme) -->
+      <div class="row g-2 mb-2">
+        {% set categories = [
+          ('kueche','Küche'), ('wein','Wein'), ('bier','Bier'), ('mineral','Mineral'),
+          ('heissgetraenke','Heissgetränke'), ('spirituosen','Spirituosen'),
+          ('patisserie','Patisserie'), ('anderes','Anderes')
+        ] %}
+        {% for key,label in categories %}
+        <div class="col-6">
+          <label class="form-label">{{ label }}</label>
+          <input type="number" step="0.01" min="0" inputmode="decimal" class="form-control cat-input" placeholder="0.00">
+        </div>
+        {% endfor %}
+      </div>
+
+      <input type="hidden" name="total" id="totalHidden" value="0.00">
+
+      <div class="mb-2">
+        <strong>Total-Umsatz:</strong> <span id="totalDisplay">0.00</span> CHF
+        &nbsp;<small>(Rest: <span id="restDisplay" class="rest-bad">0.00</span> CHF)</small>
+      </div>
+
+      <!-- Zahlungsarten -->
+      <div class="row g-2 mb-2">
+        {% set payments = [
+          ('bar','Bar'), ('kartenterminal','Kartenterminal'), ('twint','Twint'),
+          ('amex','Amex'), ('debitoren','Debitoren'), ('eatch','Eatch'),
+          ('reka','Reka'), ('sonstige','Sonstige')
+        ] %}
+        {% for key,label in payments %}
+        <div class="col-6">
+          <label class="form-label">{{ label }}</label>
+          <input type="number" step="0.01" min="0" inputmode="decimal"
+                 name="{{ key }}" class="form-control pay-input" placeholder="0.00" value="">
+        </div>
+        {% endfor %}
+      </div>
+
+      <button type="submit" id="submitBtn" class="btn btn-primary w-100 mt-2" disabled>Speichern</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  function norm(x){ x=(x??'').toString().replace(',','.'); const v=parseFloat(x); return Number.isFinite(v)?v:0; }
+  function fmt(v){ return (Math.round((v+Number.EPSILON)*100)/100).toFixed(2); }
+  function sum(nodeList){ let s=0; nodeList.forEach(el=>s+=norm(el.value)); return s; }
+
+  const catInputs = document.querySelectorAll('.cat-input');
+  const payInputs = document.querySelectorAll('.pay-input');
+  const totalDisplay = document.getElementById('totalDisplay');
+  const restDisplay  = document.getElementById('restDisplay');
+  const totalHidden  = document.getElementById('totalHidden');
+  const submitBtn    = document.getElementById('submitBtn');
+
+  function recalc(){
+    const total = sum(catInputs);
+    totalDisplay.textContent = fmt(total);
+    totalHidden.value = fmt(total);
+
+    const pays = sum(payInputs);
+    const rest = total - pays;
+    restDisplay.textContent = fmt(rest);
+
+    const ok = Math.abs(rest) < 0.005;
+    restDisplay.classList.toggle('rest-ok', ok);
+    restDisplay.classList.toggle('rest-bad', !ok);
+    submitBtn.disabled = !ok;
+  }
+  [...catInputs, ...payInputs].forEach(el=>{
+    el.addEventListener('input', e=>{ if(e.target.value.includes(',')) e.target.value=e.target.value.replace(',','.'); recalc(); });
+    el.addEventListener('blur',  e=>{ e.target.value = fmt(norm(e.target.value)); recalc(); });
+  });
+  recalc();
+</script>
+</body>
+</html>
